@@ -24,6 +24,7 @@
   extern int pchline;
 %}
 %option c++
+%option noyywrap
 %%
 
 "[Header]"  { return HEADER; }

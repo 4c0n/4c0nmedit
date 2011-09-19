@@ -30,6 +30,7 @@
 
 %option prefix="pdl"
 %option c++
+%option noyywrap
 
 %%
 
@@ -126,6 +127,7 @@
 
 %%
 
-int pdlwrap(void) {
-    return 1;
+int yywrap()
+{
+  return 1;
 }
