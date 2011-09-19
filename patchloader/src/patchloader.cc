@@ -17,6 +17,7 @@
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 
+#include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
 
@@ -157,6 +158,13 @@ void load(string filename, string patchname, int slot,
   patch->setName(patchname);
   Patch::PositionList sectionEndPositions;
   BitStream patchStream = patch->serialize(&sectionEndPositions);
+
+  int n = 0;
+  for (Patch::PositionList::iterator i = sectionEndPositions.begin();
+       i != sectionEndPositions.end(); i++) {
+    printf("pos %d %d\n", n++, (*i));
+  }
+
   PatchMessage patchMessage(patchStream, sectionEndPositions);
   patchMessage.setSlot(slot);
   
