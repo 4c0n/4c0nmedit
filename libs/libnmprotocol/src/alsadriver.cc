@@ -143,7 +143,6 @@ ALSADriver::StringList ALSADriver::device_list(snd_rawmidi_stream_t mode)
     error("no sound card found");
     return ports;
   }
-  puts("Device    Name");
   do {
     StringList p = list_card_devices(card, mode);
     ports.insert(ports.end(), p.begin(), p.end());
