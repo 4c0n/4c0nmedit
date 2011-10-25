@@ -34,6 +34,16 @@ public:
     printf("\n");
   }
 
+  void messageReceived(MeterMessage message) {
+    printf("MeterMessage: ");
+    printf("pid: %d ", message.getPid());
+    printf("StartIndex: %d ", message.getStartIndex());
+    for (int i = 0; i < 8; i++) {
+      printf("%d ", message.getMeterStatus(i));
+    }
+    printf("\n");
+  }
+
   void messageReceived(NewPatchInSlotMessage message) {
     printf("New patch in slot %d, pid: %d\n",
 	   message.getSlot(), message.getPid());
@@ -79,7 +89,8 @@ int main(int argc, char** argv)
 
     MidiDriver* driver =
       MidiDriver::createDriver(*MidiDriver::getDrivers().begin());
-    driver->connect("/dev/snd/midiC1D0", "/dev/snd/midiC1D0");
+    driver->connect(*driver->getMidiInputPorts().begin(),
+		    *driver->getMidiOutputPorts().begin());
 
     NMProtocol nmProtocol(driver);
     nmProtocol.addListener(new Listener());

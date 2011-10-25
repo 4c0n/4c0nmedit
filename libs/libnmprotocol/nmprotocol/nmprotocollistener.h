@@ -22,6 +22,7 @@
 
 #include "nmprotocol/iammessage.h"
 #include "nmprotocol/lightmessage.h"
+#include "nmprotocol/metermessage.h"
 #include "nmprotocol/patchmessage.h"
 #include "nmprotocol/ackmessage.h"
 #include "nmprotocol/patchlistmessage.h"
@@ -42,6 +43,7 @@ class NMProtocolListener
 
   virtual void messageReceived(IAmMessage message) {}
   virtual void messageReceived(LightMessage message) {}
+  virtual void messageReceived(MeterMessage message) {}
   virtual void messageReceived(PatchMessage message) {}
   virtual void messageReceived(AckMessage message) {}
   virtual void messageReceived(PatchListMessage message) {}

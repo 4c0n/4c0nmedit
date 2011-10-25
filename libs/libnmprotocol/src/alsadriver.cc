@@ -1,6 +1,11 @@
 /*
     Nord Modular Midi Protocol 3.03 Library
-    Copyright (C) 2003 Marcus Andersson
+    Copyright (C) 2003-2011 Marcus Andersson
+
+    with parts from
+
+    amidi.c - read from/write to RawMIDI ports
+    Copyright (c) Clemens Ladisch <clemens@ladisch.de>
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -21,7 +26,7 @@
 
 #include <unistd.h>
 #include <glob.h>
-#include <alsa/asoundlib.h>
+#include <poll.h>
 
 #include "nmprotocol/midiexception.h"
 #include "nmprotocol/alsadriver.h"
@@ -35,58 +40,144 @@ ALSADriver::~ALSADriver()
   disconnect();
 }
 
-ALSADriver::StringList ALSADriver::getMidiInputPorts()
+static void error(const char *format, ...)
 {
-  return getMidiPorts(O_RDONLY | O_NONBLOCK);
+  va_list ap;
+  
+  va_start(ap, format);
+  vfprintf(stderr, format, ap);
+  va_end(ap);
+  putc('\n', stderr);
 }
 
-ALSADriver::StringList ALSADriver::getMidiOutputPorts()
+ALSADriver::StringList ALSADriver::list_device(snd_ctl_t *ctl, int card,
+				   int device, snd_rawmidi_stream_t mode)
 {
-  return getMidiPorts(O_WRONLY | O_NONBLOCK);
-}
-
-ALSADriver::StringList ALSADriver::getMidiPorts(int flags)
-{
+  snd_rawmidi_info_t *info;
+  const char *name;
+  const char *sub_name;
+  int subs;
+  int err;
   StringList ports;
-  glob_t globdata;
-  int fd;
-
-  glob("/dev/snd/midi*", 0, 0, &globdata);
-  if (globdata.gl_pathc > 0) {
-    int n = 0;
-    char* path;
-    while ((path = globdata.gl_pathv[n]) != 0) {
-      fd = open(path, flags);
-      if (fd >= 0) {
-	ports.push_back(path);
-	close(fd);
+  char buf[40];
+  
+  snd_rawmidi_info_alloca(&info);
+  snd_rawmidi_info_set_device(info, device);
+  snd_rawmidi_info_set_subdevice(info, 0);
+  snd_rawmidi_info_set_stream(info, mode);
+  if ((err = snd_ctl_rawmidi_info(ctl, info)) < 0 &&
+      err != -ENOENT) {
+    error("cannot get rawmidi information %d:%d: %s",
+	  card, device, snd_strerror(err));
+    return ports;
+  }
+  if (err == -ENOENT)
+    return ports;
+  name = snd_rawmidi_info_get_name(info);
+  sub_name = snd_rawmidi_info_get_subdevice_name(info);
+  subs = snd_rawmidi_info_get_subdevices_count(info);
+  if (sub_name[0] == '\0') {
+    snprintf(buf, 40, "hw:%d,%d", card, device);
+    ports.push_back(buf);
+  } else {
+    int sub = 0;
+    for (;;) {
+      snprintf(buf, 40, "hw:%d,%d,%d", card, device, sub);
+      ports.push_back(buf);
+      if (++sub >= subs)
+	break;
+      snd_rawmidi_info_set_subdevice(info, sub);
+      if ((err = snd_ctl_rawmidi_info(ctl, info)) < 0) {
+	error("cannot get rawmidi information %d:%d:%d: %s",
+	      card, device, sub, snd_strerror(err));
+	break;
       }
-      n++;
+      sub_name = snd_rawmidi_info_get_subdevice_name(info);
     }
   }
-  globfree(&globdata);
 
   return ports;
 }
 
+ALSADriver::StringList ALSADriver::list_card_devices(int card,
+						     snd_rawmidi_stream_t mode)
+{
+  snd_ctl_t *ctl;
+  char name[32];
+  int device;
+  int err;
+  StringList ports;
+  
+  sprintf(name, "hw:%d", card);
+  if ((err = snd_ctl_open(&ctl, name, 0)) < 0) {
+    error("cannot open control for card %d: %s", card, snd_strerror(err));
+    return ports;
+  }
+  device = -1;
+  for (;;) {
+    if ((err = snd_ctl_rawmidi_next_device(ctl, &device)) < 0) {
+      error("cannot determine device number: %s", snd_strerror(err));
+      break;
+    }
+    if (device < 0)
+      break;
+    StringList p = list_device(ctl, card, device, mode);
+    ports.insert(ports.end(), p.begin(), p.end());
+  }
+  snd_ctl_close(ctl);
+
+  return ports;
+}
+
+ALSADriver::StringList ALSADriver::device_list(snd_rawmidi_stream_t mode)
+{
+  int card, err;
+  StringList ports;
+  
+  card = -1;
+  if ((err = snd_card_next(&card)) < 0) {
+    error("cannot determine card number: %s", snd_strerror(err));
+    return ports;
+  }
+  if (card < 0) {
+    error("no sound card found");
+    return ports;
+  }
+  puts("Device    Name");
+  do {
+    StringList p = list_card_devices(card, mode);
+    ports.insert(ports.end(), p.begin(), p.end());
+    if ((err = snd_card_next(&card)) < 0) {
+      error("cannot determine card number: %s", snd_strerror(err));
+      break;
+    }
+  } while (card >= 0);
+
+  return ports;
+}
+
+ALSADriver::StringList ALSADriver::getMidiInputPorts()
+{
+  return device_list(SND_RAWMIDI_STREAM_INPUT);
+}
+
+ALSADriver::StringList ALSADriver::getMidiOutputPorts()
+{
+  return device_list(SND_RAWMIDI_STREAM_OUTPUT);
+}
+
 void ALSADriver::connect(string midiInputPort, string midiOutputPort)
 {
-  fd_in = open(midiInputPort.c_str(), O_RDONLY | O_NONBLOCK);
-  if (fd_in < 0) {
-    throw MidiException("Failed to open midi input port.", errno);
-  }
-
-  fd_out = open(midiOutputPort.c_str(), O_WRONLY | O_NONBLOCK);
-  if (fd_out < 0) {
-    close(fd_in);
-    throw MidiException("Failed to open midi output port.", errno);
+  int err = snd_rawmidi_open(&fd_in, &fd_out, midiInputPort.c_str(), 0);
+  if (err != 0) {
+    throw MidiException("Failed to open midi port.", errno);
   }
 }
 
 void ALSADriver::disconnect()
 {
-  close(fd_in);
-  close(fd_out);
+  snd_rawmidi_close(fd_in);
+  snd_rawmidi_close(fd_out);
 }
 
 void ALSADriver::send(Bytes bytes)
@@ -99,29 +190,69 @@ void ALSADriver::send(Bytes bytes)
     buffer[n] = (*i);
   }
 
-  if (write(fd_out, buffer, bytes.size()) < 0) {
+  if (snd_rawmidi_write(fd_out, buffer, bytes.size()) < 0) {
     throw MidiException("Failed to write to midi output port.", errno);
   }
 }
 
 void ALSADriver::receive(Bytes& bytes)
 {
-  unsigned char byte;
+  unsigned char byte[4096];
   int n;
 
-  bytes.clear();
+  int read = 0;
+  int npfds, time = 0;
+  struct pollfd *pfds;
+  
+  snd_rawmidi_nonblock(fd_in, 1);
+  npfds = snd_rawmidi_poll_descriptors_count(fd_in);
+  pfds = (pollfd*)alloca(npfds * sizeof(struct pollfd));
+  snd_rawmidi_poll_descriptors(fd_in, pfds, npfds);
 
-  while ((n = read(fd_in, &byte, 1)) == 1) {
-    inputBuffer.push_back(byte);
-    if (byte == SYSEX_END) {
+  for (;;) {
+    unsigned char buf[256];
+    int i, length;
+    unsigned short revents;
+    int err = 0;
+
+    err = poll(pfds, npfds, 10);
+    if (err < 0 && errno == EINTR)
+      break;
+    if (err < 0) {
+      error("poll failed: %s", strerror(errno));
+      break;
+    }
+    if (err == 0) {
+      break;
+    }
+    if ((err = snd_rawmidi_poll_descriptors_revents(fd_in, pfds, npfds, &revents)) < 0) {
+      error("cannot get poll events: %s", snd_strerror(errno));
+      break;
+    }
+    if (revents & (POLLERR | POLLHUP))
+      break;
+    if (!(revents & POLLIN))
+      continue;
+    err = snd_rawmidi_read(fd_in, buf, sizeof(buf));
+    if (err == -EAGAIN)
+      continue;
+    if (err < 0) {
+      error("cannot read from port: %s", snd_strerror(err));
+      break;
+    }
+    memcpy(&byte[read], buf, err);
+    read += err;
+    time = 0;
+  }
+
+  bytes.clear();
+  
+  for (int i = 0; i < read; i++) {
+    inputBuffer.push_back(byte[i]);
+    if (byte[i] == SYSEX_END) {
       bytes = inputBuffer;
       inputBuffer.clear();
-      return;
     }
-  }
-  
-  if (n < 0 && errno != EAGAIN) {
-    throw MidiException("Failed to read from midi input port.", errno);
   }
 }
 

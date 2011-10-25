@@ -17,45 +17,34 @@
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 
-#ifndef ALSADRIVER_H
-#define ALSADRIVER_H
+#ifndef METERMESSAGE_H
+#define METERMESSAGE_H
 
-#ifdef ALSA
+#include "nmprotocol/midimessage.h"
 
-#include <alsa/asoundlib.h>
+class Packet;
 
-#include "nmprotocol/mididriver.h"
-
-using namespace std;
-
-class ALSADriver : public virtual MidiDriver
+class MeterMessage : public virtual MidiMessage
 {
  public:
 
-  ALSADriver();
-  virtual ~ALSADriver();
+  MeterMessage();
+  MeterMessage(Packet* packet);
+  virtual ~MeterMessage();
 
-  virtual StringList getMidiInputPorts();
-  virtual StringList getMidiOutputPorts();
+  virtual void getBitStream(BitStreamList* bitStreamList);
 
-  virtual void connect(string midiInputPort, string midiOutputPort);
-  virtual void disconnect();
-
-  virtual void send(Bytes bytes);
-  virtual void receive(Bytes& bytes);
+  virtual void notifyListener(NMProtocolListener* listener);
+    
+  int getStartIndex();
+  int getMeterStatus(int meterNo);
+  int getPid();
 
  private:
-
-  Bytes inputBuffer;
-  snd_rawmidi_t* fd_in;
-  snd_rawmidi_t* fd_out;
-
-  StringList list_device(snd_ctl_t *ctl, int card,
-			 int device, snd_rawmidi_stream_t mode);
-  StringList list_card_devices(int card, snd_rawmidi_stream_t mode);
-  StringList device_list(snd_rawmidi_stream_t mode);  
+  
+  int pid;
+  int startIndex;
+  int meters[8];
 };
-
-#endif // ALSA
 
 #endif

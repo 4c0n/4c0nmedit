@@ -22,6 +22,7 @@
 #include "nmprotocol/midimessage.h"
 #include "nmprotocol/iammessage.h"
 #include "nmprotocol/lightmessage.h"
+#include "nmprotocol/metermessage.h"
 #include "nmprotocol/patchmessage.h"
 #include "nmprotocol/ackmessage.h"
 #include "nmprotocol/patchlistmessage.h"
@@ -104,6 +105,9 @@ MidiMessage* MidiMessage::create(BitStream* bitStream)
       }
       if (packet.contains("Lights")) {
 	return new LightMessage(&packet);
+      }
+      if (packet.contains("Meters")) {
+	return new MeterMessage(&packet);
       }
       if (packet.contains("KnobChange")) {
 	return new ParameterMessage(&packet);
